@@ -1,0 +1,5 @@
+#!/bin/bash
+real_ld=$0
+echo "name is ${real_ld}"
+echo "arg is ffff $@"
+#${real_ld} "$@"

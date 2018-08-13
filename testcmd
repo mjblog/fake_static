@@ -1,0 +1,4 @@
+export LD_PRELOAD=`pwd`/./wrap_execve.so
+export __WRAP_LD_PATH=`pwd`/ldwrap
+gcc ldwrap.c -o ldwrap -Wall -W -Wextra -g3  -Wextra
+

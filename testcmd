@@ -2,3 +2,5 @@ export LD_PRELOAD=`pwd`/./wrap_execve.so
 export __WRAP_LD_PATH=`pwd`/ldwrap
 gcc ldwrap.c -o ldwrap -Wall -W -Wextra -g3  -Wextra
 
+通过wrap_execve.so 监控gcc调用的ld，将其劫持到ldwrap-sh。
+启动到shell脚本时，会吃掉第一个arg，这样我们就无法获知原来ld的位置。为了绕过这个机制，在执行脚本前，将第一个arg dup一次。

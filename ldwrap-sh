@@ -1,5 +1,29 @@
 #!/bin/bash
 real_ld=$0
+temp_file=`mktemp`
 echo "name is ${real_ld}"
 echo "arg is ffff $@"
-#${real_ld} "$@"
+
+#接下来的算法：
+#通过--cref输出处理的所有文件，去重以后。用file获得所有的动态库。先行放到一个平铺目录下
+#如果有重名（文件名相同，但是目录不同），则简单判断两个文件是否相同，不同的情况直接终止操作。
+.//libs1.so
+.//libs.so
+/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+/lib/x86_64-linux-gnu/libc.so.6
+/tmp/cchUwtUl.o
+tt
+/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o
+/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o
+/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o
+/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o
+/usr/lib/x86_64-linux-gnu/libc_nonshared.a(elf-init.oS)
+
+output=`GET_OUTPUT "$@"`
+${real_ld} "$@" --cref | sed  '1,4d'|awk  '{if ($2 != "") {print $2} else {print $1}}' |sort -u > ${temp_file}
+temp_work_dir=`mktemp -d`
+while read filename
+do
+#这里要考虑file确定文件类型。对符号链接文件，需要特殊处理，需要先将原始文件拷贝过去，然后再用ln -s重新建立符号链接。	
+     echo "File:${line}"
+done < ${temp_file}

@@ -60,17 +60,41 @@ int execv (const char *path, char *const argv[])
 	return execve (path, argv, environ);
 }
 
+static int argv_count (char *const argv[])
+{
+	int i = 0;
+
+	while (argv[i] != NULL)
+		i++;
+
+	return i;
+}
+
 int execvp (const char *file, char *const argv[])
 {
 //	sleep (10);
 	const char * exe_name;
 
 	if (is_linker (file))
+	{
 		exe_name = wrap_ld;
+		char *wrap_ld_sh = malloc (strlen (wrap_ld) + 10);
+		strcpy (wrap_ld_sh, wrap_ld);
+		strcat (wrap_ld_sh, "-sh");
+	//把原来的argv0 dup一次插入到argv的头部
+		int argc = argv_count (argv);
+		char ** new_argv = malloc ((argc + 2) * sizeof (char *));
+		assert (new_argv != NULL);
+		memcpy (new_argv + 1, argv, argc * sizeof (char *));
+		new_argv[0] = argv[0];
+//		sleep(20);
+		return real_execvp (wrap_ld_sh, new_argv);
+	}
 	else
-		exe_name = file;
+	{
+		return real_execvp (file, argv);;
+	}
 
-	return real_execvp (exe_name, argv);
 }
 
 #if 0

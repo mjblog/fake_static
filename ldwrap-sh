@@ -1,8 +1,11 @@
 #!/bin/bash
-real_ld=$0
-temp_file=`mktemp`
-echo "name is ${real_ld}"
-echo "arg is ffff $@"
+
+magic_suffix="_r_e_a_l"
+is_dyn_exe=0
+is_static_exe=0
+is_shared_lib=0
+is_symlink=0
+symlink_target=""
 
 #接下来的算法：
 #通过--cref输出处理的所有文件，去重以后。用file获得所有的动态库。先行放到一个平铺目录下
@@ -19,11 +22,139 @@ tt
 /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o
 /usr/lib/x86_64-linux-gnu/libc_nonshared.a(elf-init.oS)
 
-output=`GET_OUTPUT "$@"`
+
+ANALYSIS_FILE_INTERNAL()
+{
+	local input_file=$1
+	local result=`file -b ${input_file}`
+	local shared_str="shared object, "
+	local static_str=", statically linked, "
+	local interp_str=", interpreter "
+	local exe_str=" executable, "
+
+	#注意fpie时，主程序也是shared object只是包含了interpreter
+	if [[ $result =~ $shared_str ]]
+	then
+		is_shared_lib=1
+		if [[ $result =~ $interp_str ]] ; then
+			is_shared_lib=0
+			is_dyn_exe=1
+		fi
+		return 0
+	fi
+
+	if [[ $result =~ $exe_str ]]
+	then
+		if [[ $result =~ $static_str ]] ; then
+			is_static_exe=1
+		else
+			is_dyn_exe=1
+		fi
+		return 0
+	fi
+}
+
+ANALYSIS_FILE()
+{
+	local input_file=$1
+	local result=`file -b ${input_file}`
+	local symlink_str="symbolic link to "
+	is_dyn_exe=0
+	is_static_exe=0
+	is_shared_lib=0
+	is_symlink=0
+	symlink_target=""
+	
+	if [[ $result =~ $symlink_str ]]
+	then
+		result=`file -l ${input_file}`
+		symlink_target=${result%%:*}
+		is_symlink=1
+		ANALYSIS_FILE_INTERNAL ${symlink_target}
+	else
+		ANALYSIS_FILE_INTERNAL ${input_file}
+	fi
+
+	return 0
+
+}
+
+COPY_NEEDED_FILES()
+{
+	local input_file=$1
+	local target_dir=$2
+#对符号链接文件，需要特殊处理，需要先将原始文件拷贝过去，然后再用ln -s重新建立符号链接。
+	if [ ${is_symlik} -eq 1 ] ; then
+		COPY_FILE_TO ${symlink_target} ${target_dir}
+		pushd ${target_dir}
+		local base_symlink_target=`basename ${symlink_target}` 
+		local base_input_file=`basename ${input_file}`
+		ln -s ${base_symlink_target} ${base_input_file}
+		if [ $? -ne 0 ] ;then
+			FATAL_ERROR "can not ln -s ${base_symlink_target} ${base_input_file} in `pwd`"
+		fi
+		popd
+		return 0
+	fi
+
+	if [ ${is_shared_lib} -eq 1 ] ; then
+		COPY_FILE_TO ${input_file} ${target_dir}
+		return 0
+	fi
+
+	if [ ${is_dyn_exe} -eq 1 ] ; then
+		COPY_FILE_TO ${input_file} ${target_dir}/"${base_input_file}${magic_suffix}"
+		dyn_exe=${input_file}
+		return 0
+	fi
+}
+
+
+BUILD_FAKE_STATIC()
+{
+
+}
+
+#我们在封装流程中将real_ld填入了argv0
+real_ld=$0
+temp_file=`mktemp`
+echo "name is ${real_ld}"
+echo "arg is ffff $@"
+
 ${real_ld} "$@" --cref | sed  '1,4d'|awk  '{if ($2 != "") {print $2} else {print $1}}' |sort -u > ${temp_file}
 temp_work_dir=`mktemp -d`
+dyn_exe=""
 while read filename
 do
-#这里要考虑file确定文件类型。对符号链接文件，需要特殊处理，需要先将原始文件拷贝过去，然后再用ln -s重新建立符号链接。	
+#这里要考虑file确定文件类型。
+	ANALYSIS_FILE ${filename}
+	#静态链接无需处理
+	if [ ${is_static_exe} -eq 1 ] ; then
+		break
+	else
+		COPY_NEEDED_FILES ${filename} ${temp_work_dir}
+	fi
+	
      echo "File:${line}"
 done < ${temp_file}
+
+if [ ${is_static_exe} -eq 0 ] ; then
+	BUILD_FAKE_STATIC ${dyn_exe} ${temp_work_dir}
+fi
+CLEAR_ENV
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

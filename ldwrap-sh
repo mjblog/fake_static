@@ -1,6 +1,9 @@
 #!/bin/bash
+set -e
+set -x
 
 magic_suffix="_r_e_a_l"
+magic_hide_dirname=".fakestatic"
 is_dyn_exe=0
 is_static_exe=0
 is_shared_lib=0
@@ -10,18 +13,6 @@ symlink_target=""
 #接下来的算法：
 #通过--cref输出处理的所有文件，去重以后。用file获得所有的动态库。先行放到一个平铺目录下
 #如果有重名（文件名相同，但是目录不同），则简单判断两个文件是否相同，不同的情况直接终止操作。
-.//libs1.so
-.//libs.so
-/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-/lib/x86_64-linux-gnu/libc.so.6
-/tmp/cchUwtUl.o
-tt
-/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o
-/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o
-/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o
-/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o
-/usr/lib/x86_64-linux-gnu/libc_nonshared.a(elf-init.oS)
-
 
 ANALYSIS_FILE_INTERNAL()
 {
@@ -67,8 +58,7 @@ ANALYSIS_FILE()
 	
 	if [[ $result =~ $symlink_str ]]
 	then
-		result=`file -l ${input_file}`
-		symlink_target=${result%%:*}
+		symlink_target=`readlink -f ${input_file}`
 		is_symlink=1
 		ANALYSIS_FILE_INTERNAL ${symlink_target}
 	else
@@ -79,16 +69,28 @@ ANALYSIS_FILE()
 
 }
 
+COPY_FILE_TO()
+{
+	local target_file=$2/`basename $1`
+
+	if [ -f ${target_file} ] ; then
+		echo "found conflicting ${target_file} when copying files"
+		exit 1
+	fi
+	cp $1 $2/
+	return 0
+}
+
 COPY_NEEDED_FILES()
 {
 	local input_file=$1
 	local target_dir=$2
+	local base_input_file=`basename ${input_file}`	
 #对符号链接文件，需要特殊处理，需要先将原始文件拷贝过去，然后再用ln -s重新建立符号链接。
-	if [ ${is_symlik} -eq 1 ] ; then
+	if [ ${is_symlink} -eq 1 ] ; then
 		COPY_FILE_TO ${symlink_target} ${target_dir}
 		pushd ${target_dir}
 		local base_symlink_target=`basename ${symlink_target}` 
-		local base_input_file=`basename ${input_file}`
 		ln -s ${base_symlink_target} ${base_input_file}
 		if [ $? -ne 0 ] ;then
 			FATAL_ERROR "can not ln -s ${base_symlink_target} ${base_input_file} in `pwd`"
@@ -103,24 +105,65 @@ COPY_NEEDED_FILES()
 	fi
 
 	if [ ${is_dyn_exe} -eq 1 ] ; then
-		COPY_FILE_TO ${input_file} ${target_dir}/"${base_input_file}${magic_suffix}"
+		COPY_FILE_TO ${input_file} ${target_dir}
+		mv ${target_dir}/${base_input_file} ${target_dir}/"${base_input_file}${magic_suffix}"
 		dyn_exe=${input_file}
 		return 0
 	fi
 }
 
+BUILD_SELF_EXTRACT_SHELL()
+{
+	local tarfile=$1
+	local tempfile=`mktemp`
+	echo '
+#!/bin/sh
+wrap_shell_name=`readlink -f $0`
+ARCHIVE=`awk '"'"'/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }'"'"' "$0"`
+tail -n+$ARCHIVE "$0" | tar xzvm  > /dev/null 2>&1 3>&1	
+exit 0
+__ARCHIVE_BELOW__
+	' > ${tempfile}
+	cat ${tarfile} >> ${tempfile}
+	mv ${tempfile} ${tarfile}
+	chmod +x ${tarfile}
+	return 0
+}
 
 BUILD_FAKE_STATIC()
 {
+	local final_dyn_exe=$1
+	local work_dir=$2
+	local final_dyn_exe_basename=`basename ${final_dyn_exe}`
+	pushd ${work_dir}
 
+	#build a native version first
+	mkdir ./${magic_hide_dirname}/${final_dyn_exe_basename} -p
+	mv * ./${magic_hide_dirname}/${final_dyn_exe_basename}/
+	echo '
+#!/bin/sh
+wrap_shell_name=`readlink -f $0`
+exe_name=`basename ${wrap_shell_name}`
+exe_dir="`dirname ${wrap_shell_name}`/'${magic_hide_dirname}'/${exe_name}/"
+
+dyn_link=`readelf  /bin//ls -l |grep "\]"`
+dyn_link=${dyn_link##*/}
+dyn_link=${dyn_link%]}
+${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-path ${exe_dir}' > ${final_dyn_exe_basename}
+
+	tar cf ${final_dyn_exe} ${final_dyn_exe_basename} ./${magic_hide_dirname}/${final_dyn_exe_basename}/
+	BUILD_SELF_EXTRACT_SHELL ${final_dyn_exe}
+	popd
 }
 
 #我们在封装流程中将real_ld填入了argv0
-real_ld=$0
+real_ld=$1
 temp_file=`mktemp`
 echo "name is ${real_ld}"
 echo "arg is ffff $@"
 
+unset LD_PRELOAD
+shift
 ${real_ld} "$@" --cref | sed  '1,4d'|awk  '{if ($2 != "") {print $2} else {print $1}}' |sort -u > ${temp_file}
 temp_work_dir=`mktemp -d`
 dyn_exe=""
@@ -141,7 +184,8 @@ done < ${temp_file}
 if [ ${is_static_exe} -eq 0 ] ; then
 	BUILD_FAKE_STATIC ${dyn_exe} ${temp_work_dir}
 fi
-CLEAR_ENV
+
+
 
 
 

@@ -116,14 +116,14 @@ BUILD_SELF_EXTRACT_SHELL()
 {
 	local tarfile=$1
 	local tempfile=`mktemp`
-	echo '
-#!/bin/sh
+	echo '#!/bin/sh
 wrap_shell_name=`readlink -f $0`
 ARCHIVE=`awk '"'"'/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }'"'"' "$0"`
-tail -n+$ARCHIVE "$0" | tar xzvm  > /dev/null 2>&1 3>&1	
+tail -n+$ARCHIVE "$0" | tar xzvm > /dev/null
+exec ${wrap_shell_name} "$@"
 exit 0
-__ARCHIVE_BELOW__
-	' > ${tempfile}
+__ARCHIVE_BELOW__' > ${tempfile}
+
 	cat ${tarfile} >> ${tempfile}
 	mv ${tempfile} ${tarfile}
 	chmod +x ${tarfile}
@@ -140,8 +140,7 @@ BUILD_FAKE_STATIC()
 	#build a native version first
 	mkdir ./${magic_hide_dirname}/${final_dyn_exe_basename} -p
 	mv * ./${magic_hide_dirname}/${final_dyn_exe_basename}/
-	echo '
-#!/bin/sh
+	echo '#!/bin/sh
 wrap_shell_name=`readlink -f $0`
 exe_name=`basename ${wrap_shell_name}`
 exe_dir="`dirname ${wrap_shell_name}`/'${magic_hide_dirname}'/${exe_name}/"
@@ -150,8 +149,8 @@ dyn_link=`readelf  /bin//ls -l |grep "\]"`
 dyn_link=${dyn_link##*/}
 dyn_link=${dyn_link%]}
 ${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-path ${exe_dir}' > ${final_dyn_exe_basename}
-
-	tar cf ${final_dyn_exe} ${final_dyn_exe_basename} ./${magic_hide_dirname}/${final_dyn_exe_basename}/
+	chmod +x ${final_dyn_exe_basename}
+	tar czf ${final_dyn_exe} ${final_dyn_exe_basename} ./${magic_hide_dirname}/${final_dyn_exe_basename}/
 	BUILD_SELF_EXTRACT_SHELL ${final_dyn_exe}
 	popd
 }
@@ -159,8 +158,8 @@ ${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-pat
 #我们在封装流程中将real_ld填入了argv0
 real_ld=$1
 temp_file=`mktemp`
-echo "name is ${real_ld}"
-echo "arg is ffff $@"
+#echo "name is ${real_ld}"
+#echo "arg is ffff $@"
 
 unset LD_PRELOAD
 shift

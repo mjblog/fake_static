@@ -155,6 +155,11 @@ ${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-pat
 	popd
 }
 
+CLEAN_ENV()
+{
+	rm ${temp_file}
+}
+
 #我们在封装流程中将real_ld填入了argv0
 real_ld=$1
 temp_file=`mktemp`
@@ -184,8 +189,7 @@ if [ ${is_static_exe} -eq 0 ] ; then
 	BUILD_FAKE_STATIC ${dyn_exe} ${temp_work_dir}
 fi
 
-
-
+CLEAN_ENV
 
 
 

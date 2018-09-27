@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-set -x
 
 magic_suffix="_r_e_a_l"
 magic_hide_dirname=".fakestatic"
@@ -107,7 +106,11 @@ COPY_NEEDED_FILES()
 	if [ ${is_dyn_exe} -eq 1 ] ; then
 		COPY_FILE_TO ${input_file} ${target_dir}
 		mv ${target_dir}/${base_input_file} ${target_dir}/"${base_input_file}${magic_suffix}"
-		dyn_exe=${input_file}
+		if [ "${input_file:0:1}" != "/" ] ; then
+			dyn_exe="`pwd`/${input_file}"
+		else
+			dyn_exe=${input_file}
+		fi
 		return 0
 	fi
 }
@@ -115,11 +118,47 @@ COPY_NEEDED_FILES()
 BUILD_SELF_EXTRACT_SHELL()
 {
 	local tarfile=$1
+	local tar_basename=`basename ${tarfile}`
 	local tempfile=`mktemp`
+#flock to prevent race condition
 	echo '#!/bin/sh
 wrap_shell_name=`readlink -f $0`
-ARCHIVE=`awk '"'"'/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }'"'"' "$0"`
-tail -n+$ARCHIVE "$0" | tar xzvm > /dev/null
+wrap_shell_lock=${wrap_shell_name}.lock
+wrap_shell_dir=`dirname ${wrap_shell_name}`
+oldpwd=`pwd`
+cd ${wrap_shell_dir}
+#remember that users could rename the linked file before run it
+wrap_shell_basename=`basename ${wrap_shell_name}`
+linked_prog_basename='"${tar_basename}"'
+(
+	flock -n 9 || exit 1
+	ARCHIVE=`awk '"'"'/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }'"'"' "${wrap_shell_name}"`
+#when a linked file were copied and renamed to two different name, 
+#and then get put into the same dir, and someone start the two simultaneously.
+#In this situation, two tar process might get conflicted as they write the same dir.
+#I believe this will not happen in real world, so let it be...
+	tail -n+$ARCHIVE "${wrap_shell_name}" | tar xzvm > /dev/null
+	if [ "${wrap_shell_basename}" != "${linked_prog_basename}" ] ; then
+		mv ${linked_prog_basename} ${wrap_shell_basename}
+		cd '"${magic_hide_dirname}"'
+		mv ${linked_prog_basename} ${wrap_shell_basename}
+		cd ${wrap_shell_basename}
+		mv ${linked_prog_basename}'"${magic_suffix}"'  ${wrap_shell_basename}'"${magic_suffix}"'
+		cd ${oldpwd}
+	fi
+	exit 0
+) 9>${wrap_shell_lock}
+
+if [ $? -eq 0 ] ; then
+	flock -u ${wrap_shell_lock} -c ""
+	rm ${wrap_shell_lock}
+else
+#wait till the untar process finish
+	while [ -f ${wrap_shell_lock} ]
+	do
+		sleep 0.001
+	done
+fi
 exec ${wrap_shell_name} "$@"
 exit 0
 __ARCHIVE_BELOW__' > ${tempfile}
@@ -148,7 +187,7 @@ exe_dir="`dirname ${wrap_shell_name}`/'${magic_hide_dirname}'/${exe_name}/"
 dyn_link=`readelf  /bin//ls -l |grep "\]"`
 dyn_link=${dyn_link##*/}
 dyn_link=${dyn_link%]}
-${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-path ${exe_dir}' > ${final_dyn_exe_basename}
+${exe_dir}/${dyn_link}  --library-path ${exe_dir} ${exe_dir}/"${exe_name}'${magic_suffix}'" "$@"' > ${final_dyn_exe_basename}
 	chmod +x ${final_dyn_exe_basename}
 	tar czf ${final_dyn_exe} ${final_dyn_exe_basename} ./${magic_hide_dirname}/${final_dyn_exe_basename}/
 	BUILD_SELF_EXTRACT_SHELL ${final_dyn_exe}
@@ -157,7 +196,14 @@ ${exe_dir}/${dyn_link}  ${exe_dir}/"${exe_name}'${magic_suffix}'"  --library-pat
 
 CLEAN_ENV()
 {
-	rm ${temp_file}
+
+	if [ -f ${temp_file} ] ; then
+		rm ${temp_file}
+	fi
+
+	if [ -d ${temp_work_dir} ] ; then
+		rm ${temp_work_dir} -r
+	fi	
 }
 
 #我们在封装流程中将real_ld填入了argv0
@@ -190,6 +236,7 @@ if [ ${is_static_exe} -eq 0 ] ; then
 fi
 
 CLEAN_ENV
+exit 0
 
 
 

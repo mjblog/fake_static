@@ -214,7 +214,7 @@ temp_file=`mktemp`
 
 unset LD_PRELOAD
 shift
-${real_ld} "$@" --cref | sed  '1,4d'|awk  '{if ($2 != "") {print $2} else {print $1}}' |sort -u > ${temp_file}
+${real_ld} "$@" --cref | sed  '1,4d'|awk  '{print $NF}' |sort -u > ${temp_file}
 temp_work_dir=`mktemp -d`
 dyn_exe=""
 while read filename
@@ -232,7 +232,10 @@ do
 done < ${temp_file}
 
 if [ ${is_static_exe} -eq 0 ] ; then
-	BUILD_FAKE_STATIC ${dyn_exe} ${temp_work_dir}
+	#do not process shared libs
+	if [ "${dyn_exe}_" != "_" ] ; then
+		BUILD_FAKE_STATIC ${dyn_exe} ${temp_work_dir}
+	fi
 fi
 
 CLEAN_ENV

@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-
 magic_suffix="_r_e_a_l"
 magic_hide_dirname=".fakestatic"
 is_dyn_exe=0
@@ -88,13 +87,13 @@ COPY_NEEDED_FILES()
 #对符号链接文件，需要特殊处理，需要先将原始文件拷贝过去，然后再用ln -s重新建立符号链接。
 	if [ ${is_symlink} -eq 1 ] ; then
 		COPY_FILE_TO ${symlink_target} ${target_dir}
-		pushd ${target_dir}
+		pushd ${target_dir} &> /dev/null
 		local base_symlink_target=`basename ${symlink_target}` 
 		ln -s ${base_symlink_target} ${base_input_file}
 		if [ $? -ne 0 ] ;then
 			FATAL_ERROR "can not ln -s ${base_symlink_target} ${base_input_file} in `pwd`"
 		fi
-		popd
+		popd &> /dev/null
 		return 0
 	fi
 
@@ -174,7 +173,7 @@ BUILD_FAKE_STATIC()
 	local final_dyn_exe=$1
 	local work_dir=$2
 	local final_dyn_exe_basename=`basename ${final_dyn_exe}`
-	pushd ${work_dir}
+	pushd ${work_dir} &> /dev/null
 
 	#build a native version first
 	mkdir ./${magic_hide_dirname}/${final_dyn_exe_basename} -p
@@ -191,7 +190,7 @@ ${exe_dir}/${dyn_link}  --library-path ${exe_dir} ${exe_dir}/"${exe_name}'${magi
 	chmod +x ${final_dyn_exe_basename}
 	tar czf ${final_dyn_exe} ${final_dyn_exe_basename} ./${magic_hide_dirname}/${final_dyn_exe_basename}/
 	BUILD_SELF_EXTRACT_SHELL ${final_dyn_exe}
-	popd
+	popd &> /dev/null
 }
 
 CLEAN_ENV()
@@ -227,8 +226,7 @@ do
 	else
 		COPY_NEEDED_FILES ${filename} ${temp_work_dir}
 	fi
-	
-     echo "File:${line}"
+
 done < ${temp_file}
 
 if [ ${is_static_exe} -eq 0 ] ; then

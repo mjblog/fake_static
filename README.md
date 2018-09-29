@@ -9,5 +9,4 @@ export __WRAP_LD_PATH=`pwd`/ldwrap
 After then, go back to your dir, and run your build as usual.
 
 ## Todo
-1 try to eliminate the __WRAP_LD_PATH (guess the path from wrap_execve.so)
-2 try to eliminate duplicate shared libs in .fakestatic (using a sperated script)
+1 try to eliminate duplicate shared libs in .fakestatic (using a sperated script)

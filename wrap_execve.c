@@ -1,10 +1,12 @@
 #define _GNU_SOURCE
+#include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include <dlfcn.h>
+#include <libgen.h>
 
 static const char *wrap_ld = NULL;
 static  int (*real_execve) (const char *filename, char *const argv[],  char *const envp[]) = NULL;
@@ -39,18 +41,25 @@ static int is_linker (const char *prog)
 	return ret;
 }
 
-
+#define LDWRAP_NAME "ldwrap-sh"
 __attribute__ ((constructor)) static void setup_path ()
 {
-	wrap_ld = getenv ("__WRAP_LD_PATH");
-	assert (wrap_ld != NULL);
-
 	real_execve = dlsym(RTLD_NEXT, "execve");
 	assert (real_execve != NULL);
 
 	real_execvp = dlsym(RTLD_NEXT, "execvp");
 	assert (real_execve != NULL);
 
+	wrap_ld = getenv ("__WRAP_LD_PATH");
+	if (wrap_ld == NULL)
+	{
+		Dl_info info;
+		int ret = dladdr (&__FUNCTION__, &info);
+		assert (ret != 0);
+		char *abspath = realpath(info.dli_fname, NULL);
+		wrap_ld = malloc (strlen (abspath) + strlen (LDWRAP_NAME));
+		sprintf ( (char *)wrap_ld, "%s/%s", dirname (abspath), LDWRAP_NAME);
+	}
 	return;
 }
 
@@ -72,15 +81,8 @@ static int argv_count (char *const argv[])
 
 int execvp (const char *file, char *const argv[])
 {
-//	sleep (10);
-	const char * exe_name;
-
 	if (is_linker (file))
 	{
-		exe_name = wrap_ld;
-		char *wrap_ld_sh = malloc (strlen (wrap_ld) + 10);
-		strcpy (wrap_ld_sh, wrap_ld);
-		strcat (wrap_ld_sh, "-sh");
 	//把原来的argv0 dup一次插入到argv的头部
 		int argc = argv_count (argv);
 		char ** new_argv = malloc ((argc + 2) * sizeof (char *));
@@ -88,7 +90,7 @@ int execvp (const char *file, char *const argv[])
 		memcpy (new_argv + 1, argv, argc * sizeof (char *));
 		new_argv[0] = argv[0];
 //		sleep(20);
-		return real_execvp (wrap_ld_sh, new_argv);
+		return real_execvp (wrap_ld, new_argv);
 	}
 	else
 	{

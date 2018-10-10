@@ -175,7 +175,7 @@ BUILD_FAKE_STATIC()
 	local final_dyn_exe_basename=`basename ${final_dyn_exe}`
 	pushd ${work_dir} &> /dev/null
 
-	#build a native version first
+	#build the final program first, then pack it into a self-extract shell.
 	mkdir ./${magic_hide_dirname}/${final_dyn_exe_basename} -p
 	mv * ./${magic_hide_dirname}/${final_dyn_exe_basename}/
 	echo '#!/bin/sh
@@ -183,7 +183,7 @@ wrap_shell_name=`readlink -f $0`
 exe_name=`basename ${wrap_shell_name}`
 exe_dir="`dirname ${wrap_shell_name}`/'${magic_hide_dirname}'/${exe_name}/"
 
-dyn_link=`readelf  /bin//ls -l |grep "\]"`
+dyn_link=`readelf  ${exe_dir}/${exe_name} -l |grep "\]"`
 dyn_link=${dyn_link##*/}
 dyn_link=${dyn_link%]}
 ${exe_dir}/${dyn_link}  --library-path ${exe_dir} ${exe_dir}/"${exe_name}'${magic_suffix}'" "$@"' > ${final_dyn_exe_basename}
